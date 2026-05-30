@@ -368,7 +368,12 @@ def heartbeat_thread(server_instance):
     shared_secret = server_instance.config['peer_password']  # Predefined shared secret for simplicity
     CLIENT_IDENTIFIER = os.urandom(16)
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client_socket.bind(('', 44991))
+    client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        client_socket.bind(('', 44991))
+    except OSError as e:
+        log.error(f"Failed to bind heartbeat socket on port 44991: {e}")
+        return
     csds_ipport = config["csds_ipport"]
     csds_ip, csds_port = csds_ipport.split(":")
     server_address = (csds_ip, int(csds_port))
@@ -392,21 +397,54 @@ def heartbeat_thread(server_instance):
     if not send_client_info(client_socket, server_address, key, server_instance):
         log.error("Failed to send client info. Exiting.")
         return
-    # Start heartbeat loop
-    heartbeat_attempts = 0
-    client_socket.settimeout(5)  # Set a 5-second timeout for heartbeat responses
+# Start heartbeat loop
+    client_socket.settimeout(5)
     launch_neuter_application_standalone()
-    while heartbeat_attempts < 3:
-        success = send_heartbeat(client_socket, server_address, key)
-        if success:
-            heartbeat_attempts = 0  # Reset attempts on success
-        else:
-            heartbeat_attempts += 1
-            log.warning(f"Heartbeat attempt {heartbeat_attempts} failed.")
 
-        if heartbeat_attempts >= 3:
-            log.error("Failed to receive server response after 3 heartbeats. Closing client.")
-            break
+    reconnect_delay = 30
+    while True:
+        # Heartbeat loop
+        heartbeat_attempts = 0
+        while heartbeat_attempts < 3:
+            time.sleep(300)
+            success = send_heartbeat(client_socket, server_address, key)
+            if success:
+                heartbeat_attempts = 0
+            else:
+                heartbeat_attempts += 1
+                log.warning(f"Heartbeat attempt {heartbeat_attempts}/3 failed.")
 
-        time.sleep(300)
-    #client_socket.close()
+        log.error("Failed to receive server response after 3 heartbeats. Attempting to reconnect...")
+
+        # Reconnect loop with backoff
+        while True:
+            log.info(f"Reconnecting to CSDS in {reconnect_delay} seconds...")
+            time.sleep(reconnect_delay)
+            try:
+                client_socket.close()
+                client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                client_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    client_socket.bind(('', 44991))
+                except OSError as e:
+                    log.error(f"Failed to bind on reconnect: {e}")
+                    reconnect_delay = min(reconnect_delay * 2, 300)
+                    continue
+                client_socket.connect(server_address)
+                key = handshake(client_socket, server_address, shared_secret, CLIENT_IDENTIFIER)
+                if not key:
+                    raise Exception("Handshake failed on reconnect")
+                server_instance.key = key
+                if not globalvars.aio_server:
+                    used = request_used_ids(client_socket, key)
+                    server_instance.used_app_ids = set(used.get('apps', []))
+                    server_instance.used_sub_ids = set(used.get('subs', []))
+                if not send_client_info(client_socket, server_address, key, server_instance):
+                    raise Exception("Failed to send client info on reconnect")
+                client_socket.settimeout(5)
+                log.info("Reconnected to CSDS successfully.")
+                reconnect_delay = 30
+                break  # Volta ao heartbeat loop
+            except Exception as e:
+                log.error(f"Reconnect attempt failed: {e}")
+                reconnect_delay = min(reconnect_delay * 2, 300)

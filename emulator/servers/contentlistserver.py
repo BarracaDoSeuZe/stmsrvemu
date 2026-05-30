@@ -261,10 +261,16 @@ class contentlistserver(TCPNetworkHandler):
         constructed_packet = b''
         i = 0
         while i < chunk_count:
-            print(f"Received chunk {i + 1} of {chunk_count}")
-            packet = server_socket.recv(600)
-            constructed_packet += packet
-            i += 1
+        self.log.debug(f"Receiving chunk {i + 1} of {chunk_count}")
+        chunk = b''
+        while len(chunk) < 512:
+            part = server_socket.recv(512 - len(chunk))
+            if not part:
+                self.log.error(f"Connection lost while receiving chunk {i + 1}")
+                return
+            chunk += part
+        constructed_packet += chunk
+        i += 1
 
         key = manager.client_info[client_address]['key']
         decrypted_appdata = peer_decrypt_message(key, constructed_packet)
@@ -446,7 +452,8 @@ class contentlistserver(TCPNetworkHandler):
                         s.close()
                     except Exception as e:
                         self.log.warning(f"Failed to forward packet to peer {ip}:{prt}: {e}")
-            except:
+            except Exception as e:
+                self.log.error(f"Exception in acceptcontentservers loop for {client_address}: {e}")
                 return
 
     def send_peer_list(self, sock):
