@@ -24,21 +24,24 @@ def expired_servers_thread():
 
 
 class contentlistserver(TCPNetworkHandler):
-
     def __init__(self, port, config):
         self.server_type = "CSDServer"
 
-        super(contentlistserver, self).__init__(config, int(port), self.server_type)  # Create an instance of NetworkHandler
+        super(contentlistserver, self).__init__(
+            config, int(port), self.server_type
+        )  # Create an instance of NetworkHandler
 
-        thread = threading.Thread(target = expired_servers_thread)  # Thread for removing servers older than 1 hour
+        thread = threading.Thread(
+            target=expired_servers_thread
+        )  # Thread for removing servers older than 1 hour
         thread.daemon = True
         thread.start()
 
-        peer_conf = self.config.get('content_peers', '')
+        peer_conf = self.config.get("content_peers", "")
         self.peer_servers = []
-        for peer in [p.strip() for p in peer_conf.split(',') if p.strip()]:
+        for peer in [p.strip() for p in peer_conf.split(",") if p.strip()]:
             try:
-                ip, prt = peer.split(':')
+                ip, prt = peer.split(":")
                 self.peer_servers.append((ip, int(prt)))
                 plist = self.request_peer_list(ip, int(prt))
                 for entry in plist:
@@ -85,11 +88,15 @@ class contentlistserver(TCPNetworkHandler):
         if msg.startswith(b"\x03"):
             reply = self.packet_get_clupdate_list(clientid, islan)
         elif msg.startswith(b"\x00"):
-            reply = self.get_general_server_list(clientid, islan, msg[1:], client_address)
+            reply = self.get_general_server_list(
+                clientid, islan, msg[1:], client_address
+            )
         else:
             # Log the invalid message in hex format for debugging
-            self.log.warning(f"{clientid}Invalid message! {binascii.b2a_hex(msg).decode()}")
-            reply = b'\x00'
+            self.log.warning(
+                f"{clientid}Invalid message! {binascii.b2a_hex(msg).decode()}"
+            )
+            reply = b"\x00"
 
         server_socket.send_withlen(reply)
         server_socket.close()
@@ -97,12 +104,21 @@ class contentlistserver(TCPNetworkHandler):
 
     def get_general_server_list(self, clientid, islan, msg, client_address):
         # Unpack the parameters from the message stream (msg)
-        (for_specific_content, appid, appversion, nb_max_addresses, cell_id, unknown1) = struct.unpack(">HIIHII", msg[:20])
+        (
+            for_specific_content,
+            appid,
+            appversion,
+            nb_max_addresses,
+            cell_id,
+            unknown1,
+        ) = struct.unpack(">HIIHII", msg[:20])
 
-        self.log.debug(f"{clientid} Processing get content server group list request, Unknown1: {unknown1}")
+        self.log.debug(
+            f"{clientid} Processing get content server group list request, Unknown1: {unknown1}"
+        )
 
         # Initialize response as an empty byte string
-        response = b''
+        response = b""
 
         unknown2 = 0
         if for_specific_content == 1:
@@ -110,42 +126,55 @@ class contentlistserver(TCPNetworkHandler):
             unknown2 = struct.unpack(">I", msg[20:24])[0]
             # print(f"unknown 2: {unknown2}")
         elif for_specific_content not in [0, 1]:
-            self.log.error(f"{clientid} Unknown 'forSpecificContent' value: {for_specific_content}")
-            return b'\x00'
+            self.log.error(
+                f"{clientid} Unknown 'forSpecificContent' value: {for_specific_content}"
+            )
+            return b"\x00"
 
         # Extract client IP (without port)
         client_ip = client_address[0]
 
         # Get the server list based on the content flag
         if for_specific_content:
-            servers, server_count = manager.get_content_server_groups_list(cell_id, appid, appversion, islan, client_address[0])
+            servers, server_count = manager.get_content_server_groups_list(
+                cell_id, appid, appversion, islan, client_address[0]
+            )
         else:
-            servers, server_count = manager.get_content_server_groups_list(cell_id, islan = islan, client_address = client_address[0])
+            servers, server_count = manager.get_content_server_groups_list(
+                cell_id, islan=islan, client_address=client_address[0]
+            )
 
         # Prepare the response stream
         if server_count > 0:
             if for_specific_content:
-                self.log.info(f"{clientid} Sending content server group list for App ID {appid} Version {appversion} ({server_count} entries)")
+                self.log.info(
+                    f"{clientid} Sending content server group list for App ID {appid} Version {appversion} ({server_count} entries)"
+                )
             else:
-                self.log.info(f"{clientid} Sending content server group list ({server_count} entries)")
+                self.log.info(
+                    f"{clientid} Sending content server group list ({server_count} entries)"
+                )
         else:
             if for_specific_content:
-                self.log.warning(f"{clientid} No content server available for App ID {appid} Version {appversion}")
+                self.log.warning(
+                    f"{clientid} No content server available for App ID {appid} Version {appversion}"
+                )
             else:
                 self.log.warning(f"{clientid} No content server available")
 
         # If more than one content server is returned, use latency aggregator to select the best one
         if server_count > 1:
-
             # Extract content server IPs (without ports)
             content_server_ips = []
-            for (cellid1, client_update_server, content_server) in servers:
+            for cellid1, client_update_server, content_server in servers:
                 if content_server:
                     content_server_ips.append(content_server[0])
 
             # Check if any server IP matches the client's IP
             if client_ip in content_server_ips:
-                best_server_ip = client_ip  # Skip latency aggregator and set best server IP
+                best_server_ip = (
+                    client_ip  # Skip latency aggregator and set best server IP
+                )
             else:
                 # Initialize latency aggregator with content server IPs
                 latency_aggregator_instance = latencyaggregater(content_server_ips)
@@ -156,20 +185,29 @@ class contentlistserver(TCPNetworkHandler):
             if best_server_ip:
                 # Find the server in servers that has content_server[0] == best_server_ip
                 best_server = next(
-                        ((cellid1, client_update_server, content_server) for (cellid1, client_update_server, content_server) in servers
-                         if content_server and content_server[0] == best_server_ip),
-                        None
+                    (
+                        (cellid1, client_update_server, content_server)
+                        for (cellid1, client_update_server, content_server) in servers
+                        if content_server and content_server[0] == best_server_ip
+                    ),
+                    None,
                 )
                 if best_server:
                     # Replace servers with only the best server
                     servers = [best_server]
                     server_count = 1
-                    self.log.info(f"{clientid} Selected best content server {best_server_ip} based on latency")
+                    self.log.info(
+                        f"{clientid} Selected best content server {best_server_ip} based on latency"
+                    )
                 else:
-                    self.log.warning(f"{clientid} Best server IP {best_server_ip} not found in server list")
+                    self.log.warning(
+                        f"{clientid} Best server IP {best_server_ip} not found in server list"
+                    )
                     # Proceed with original servers
             else:
-                self.log.warning(f"{clientid} Latency aggregator did not return a best server, proceeding with original servers")
+                self.log.warning(
+                    f"{clientid} Latency aggregator did not return a best server, proceeding with original servers"
+                )
         else:
             # Only one server, proceed as is
             pass
@@ -178,31 +216,54 @@ class contentlistserver(TCPNetworkHandler):
         cellid1 = 0  # Force to 0 in case of no available CS
         count = 0
         if server_count > 0:
-            for i, (cellid1, client_update_server, content_server) in enumerate(servers):
+            for i, (cellid1, client_update_server, content_server) in enumerate(
+                servers
+            ):
                 count += 1
                 if i >= nb_max_addresses:
                     break
                 # Ensure we have valid client and content server addresses
                 if not client_update_server:
                     if islan:
-                        client_update_server = (globalvars.server_ip, self.config['clupd_server_port'])
+                        client_update_server = (
+                            globalvars.server_ip,
+                            self.config["clupd_server_port"],
+                        )
                     else:
-                        client_update_server = (globalvars.public_ip, self.config['clupd_server_port'])
+                        client_update_server = (
+                            globalvars.public_ip,
+                            self.config["clupd_server_port"],
+                        )
                 if not content_server:
                     if islan:
-                        content_server = (globalvars.server_ip, self.config['content_server_port'])
+                        content_server = (
+                            globalvars.server_ip,
+                            self.config["content_server_port"],
+                        )
                     else:
                         # Check if client IP matches an IP in the content server list
                         matching_server = next(
-                                (entry for entry in manager.contentserver_list if entry[0] == client_ip),
-                                None
+                            (
+                                entry
+                                for entry in manager.contentserver_list
+                                if entry[0] == client_ip
+                            ),
+                            None,
                         )
                         if matching_server:
-                            content_server = (matching_server[1], self.config['content_server_port'])  # Use LAN IP
+                            content_server = (
+                                matching_server[1],
+                                self.config["content_server_port"],
+                            )  # Use LAN IP
                         else:
-                            content_server = (globalvars.public_ip, self.config['content_server_port'])
+                            content_server = (
+                                globalvars.public_ip,
+                                self.config["content_server_port"],
+                            )
 
-                self.log.info(f"{clientid} Sending content server cell ID {cellid1}: {client_update_server[0]}:{client_update_server[1]} / {content_server[0]}:{content_server[1]}")
+                self.log.info(
+                    f"{clientid} Sending content server cell ID {cellid1}: {client_update_server[0]}:{client_update_server[1]} / {content_server[0]}:{content_server[1]}"
+                )
 
                 # Encode and append the server group info to the response
                 bin_client_update_ip = utils.encodeIP(client_update_server)
@@ -214,15 +275,18 @@ class contentlistserver(TCPNetworkHandler):
                 if appid == None and appversion == None:
                     break
 
-        if count == 2 and len(response) > 12: # FIXME do this properl, the client does not like more than two IP addresses.  2 ip addresses counts as a single group
-            response = response[:12] # trim reply to expected clupd server length
+        if (
+            count == 2 and len(response) > 12
+        ):  # FIXME do this properl, the client does not like more than two IP addresses.  2 ip addresses counts as a single group
+            response = response[:12]  # trim reply to expected clupd server length
             count = 1
         packet = struct.pack(">HI", count, cellid1)  # Cell ID
         packet += response
-        self.log.info(f"{clientid} Finished processing get content server group list request")
+        self.log.info(
+            f"{clientid} Finished processing get content server group list request"
+        )
 
         return packet
-
 
     def packet_get_clupdate_list(self, clientid, islan):
         self.log.info(f"{clientid}Sending out Content Servers with packages (0x03)")
@@ -236,13 +300,18 @@ class contentlistserver(TCPNetworkHandler):
                 reply += utils.encodeIP(ip_port_tuple)
                 break
         else:
-            reply = struct.pack(">H", 1)  # Default reply value if no matching server is found
+            reply = struct.pack(
+                ">H", 1
+            )  # Default reply value if no matching server is found
             if islan:
-                reply += utils.encodeIP((globalvars.server_ip, self.config['clupd_server_port']))
+                reply += utils.encodeIP(
+                    (globalvars.server_ip, self.config["clupd_server_port"])
+                )
             else:
-                reply += utils.encodeIP((globalvars.public_ip, self.config['clupd_server_port']))
+                reply += utils.encodeIP(
+                    (globalvars.public_ip, self.config["clupd_server_port"])
+                )
         return reply
-
 
     # Send error message to client
     def send_error(self, server_socket, client_address, error_message):
@@ -252,27 +321,27 @@ class contentlistserver(TCPNetworkHandler):
 
     # Send OK byte to the client
     def send_ok(self, server_socket, client_address):
-        server_socket.sendto(b'\x00', client_address)
+        server_socket.sendto(b"\x00", client_address)
 
     # Handle storing client info
     def handle_client_info(self, server_socket, client_address, decrypted_data, key):
-        chunk_count = int().from_bytes(decrypted_data[0:2], 'little')
+        chunk_count = int().from_bytes(decrypted_data[0:2], "little")
         print(f"Received chunk count: {chunk_count}")
-        constructed_packet = b''
+        constructed_packet = b""
         i = 0
         while i < chunk_count:
-        self.log.debug(f"Receiving chunk {i + 1} of {chunk_count}")
-        chunk = b''
-        while len(chunk) < 512:
-            part = server_socket.recv(512 - len(chunk))
-            if not part:
-                self.log.error(f"Connection lost while receiving chunk {i + 1}")
-                return
-            chunk += part
-        constructed_packet += chunk
-        i += 1
+            self.log.debug(f"Receiving chunk {i + 1} of {chunk_count}")
+            chunk = b""
+            while len(chunk) < 512:
+                part = server_socket.recv(512 - len(chunk))
+                if not part:
+                    self.log.error(f"Connection lost while receiving chunk {i + 1}")
+                    return
+                chunk += part
+            constructed_packet += chunk
+            i += 1
 
-        key = manager.client_info[client_address]['key']
+        key = manager.client_info[client_address]["key"]
         decrypted_appdata = peer_decrypt_message(key, constructed_packet)
         print(constructed_packet)
         game_info = manager.unpack_contentserver_info(decrypted_appdata)
@@ -284,8 +353,18 @@ class contentlistserver(TCPNetworkHandler):
             if len(applist) == 0:
                 is_clientupdate_server = True
             print(repr(game_info))
-            manager.add_contentserver_info(server_id, wan_ip, lan_ip, port, region, applist, cellid, False, is_clientupdate_server)
-            #manager.client_info[client_address] = {'key':key}
+            manager.add_contentserver_info(
+                server_id,
+                wan_ip,
+                lan_ip,
+                port,
+                region,
+                applist,
+                cellid,
+                False,
+                is_clientupdate_server,
+            )
+            # manager.client_info[client_address] = {'key':key}
             manager.client_last_heartbeat[client_address] = time.time()
             self.log.debug(f"Received and stored client info: {game_info}")
             self.send_ok(server_socket, client_address)
@@ -294,11 +373,13 @@ class contentlistserver(TCPNetworkHandler):
 
     def handle_custom_blob(self, server_socket, client_address, decrypted_data):
         try:
-            sub_id, app_id, sub_len, app_len = struct.unpack_from('!IIII', decrypted_data)
+            sub_id, app_id, sub_len, app_len = struct.unpack_from(
+                "!IIII", decrypted_data
+            )
             offset = 16
-            sub_blob = decrypted_data[offset:offset + sub_len]
+            sub_blob = decrypted_data[offset : offset + sub_len]
             offset += sub_len
-            app_blob = decrypted_data[offset:offset + app_len]
+            app_blob = decrypted_data[offset : offset + app_len]
         except Exception as e:
             self.log.error(f"Failed to unpack custom blob from {client_address}: {e}")
             self.send_error(server_socket, client_address, "invalid format")
@@ -322,19 +403,19 @@ class contentlistserver(TCPNetworkHandler):
     def handle_client_handshake(self, server_socket, client_address, islan):
         # Generate new salt and key for the handshake
         salt = os.urandom(16)
-        key = encryption.derive_key(self.config['peer_password'], salt)
+        key = encryption.derive_key(self.config["peer_password"], salt)
 
         # Read the RSA key binaries
-        with open('files/configs/main_key_1024.der', 'rb') as f:
+        with open("files/configs/main_key_1024.der", "rb") as f:
             key_1024_data = f.read()
-        with open('files/configs/network_key_512.der', 'rb') as f:
+        with open("files/configs/network_key_512.der", "rb") as f:
             key_512_data = f.read()
 
         # Prepare the handshake payload with length prefixes
         message = b"handshake successful"
-        message_length = len(message).to_bytes(4, 'big')
-        key1_length = len(key_1024_data).to_bytes(4, 'big')
-        key2_length = len(key_512_data).to_bytes(4, 'big')
+        message_length = len(message).to_bytes(4, "big")
+        key1_length = len(key_1024_data).to_bytes(4, "big")
+        key2_length = len(key_512_data).to_bytes(4, "big")
 
         # Get the second blob from memory (LAN or WAN based on client)
         if islan:
@@ -347,14 +428,18 @@ class contentlistserver(TCPNetworkHandler):
             self.send_error(server_socket, client_address, "Second blob not available.")
             return
 
-        second_blob_length = len(second_blob_data).to_bytes(4, 'big')
+        second_blob_length = len(second_blob_data).to_bytes(4, "big")
 
         # Prepare and encrypt the payload
         handshake_payload = (
-                message_length + message +
-                key1_length + key_1024_data +
-                key2_length + key_512_data +
-                second_blob_length + second_blob_data
+            message_length
+            + message
+            + key1_length
+            + key_1024_data
+            + key2_length
+            + key_512_data
+            + second_blob_length
+            + second_blob_data
         )
 
         encrypted_payload = peer_encrypt_message(key, handshake_payload)
@@ -362,8 +447,8 @@ class contentlistserver(TCPNetworkHandler):
         # Split the encrypted payload into chunks
         CHUNK_SIZE = 4096  # Match the client's recv buffer size
         chunks = [
-                encrypted_payload[i:i + CHUNK_SIZE]
-                for i in range(0, len(encrypted_payload), CHUNK_SIZE)
+            encrypted_payload[i : i + CHUNK_SIZE]
+            for i in range(0, len(encrypted_payload), CHUNK_SIZE)
         ]
 
         # Send each chunk to the client
@@ -373,13 +458,17 @@ class contentlistserver(TCPNetworkHandler):
         # Send the END_OF_BLOB marker unencrypted
         server_socket.sendto(b"END_OF_BLOB", client_address)
 
-        self.log.debug(f"Handshake successful with {client_address}. Sent payload in chunks and END_OF_BLOB marker.")
+        self.log.debug(
+            f"Handshake successful with {client_address}. Sent payload in chunks and END_OF_BLOB marker."
+        )
 
         # Store the key in client_info to be used later for decryption
-        manager.client_info[client_address] = {'key':key}
+        manager.client_info[client_address] = {"key": key}
         return key
 
-    def acceptcontentservers(self, client_address, server_socket, islan, data):  # Used for registering content servers with csds
+    def acceptcontentservers(
+        self, client_address, server_socket, islan, data
+    ):  # Used for registering content servers with csds
 
         if len(data) < 5:
             self.send_error(server_socket, client_address, "Packet too small")
@@ -390,7 +479,7 @@ class contentlistserver(TCPNetworkHandler):
 
         self.log.debug(f"Received command byte: {command_byte} from {client_address}")
         packet = data[5:]  # Remove the first 5 bytes
-        #print(f"\ncommand byte: {command_byte}\n")
+        # print(f"\ncommand byte: {command_byte}\n")
 
         if command_byte == b"\x04":
             if client_address in manager.client_info:
@@ -405,18 +494,24 @@ class contentlistserver(TCPNetworkHandler):
             server_socket.close()
             return
 
-            key = manager.client_info[client_address]['key']
+            key = manager.client_info[client_address]["key"]
             self.log.debug(f"Received second blob request from {client_address}")
             self.send_second_blob(server_socket, client_address, key)
             return
 
         # If the client is not already connected or needs to handshake again
-        if command_byte == b'\x01' or client_address not in manager.client_info or self.check_client_heartbeat(client_address):
-            if command_byte == b'\x01':  # Handshake command
+        if (
+            command_byte == b"\x01"
+            or client_address not in manager.client_info
+            or self.check_client_heartbeat(client_address)
+        ):
+            if command_byte == b"\x01":  # Handshake command
                 self.log.debug(f"Client {client_address} needs to handshake.")
                 self.handle_client_handshake(server_socket, client_address, islan)
             else:
-                self.send_error(server_socket, client_address, "Client needs to handshake first.")
+                self.send_error(
+                    server_socket, client_address, "Client needs to handshake first."
+                )
                 return
 
         while True:  # Loop to keep listening for heartbeats
@@ -424,22 +519,28 @@ class contentlistserver(TCPNetworkHandler):
                 msg = server_socket.recv(512)
                 command_byte = msg[4:5]
                 packet = msg[5:]
-                key = manager.client_info[client_address]['key']
+                key = manager.client_info[client_address]["key"]
                 decrypted_data = peer_decrypt_message(key, packet)
-                self.log.debug(f"Decrypted packet from {client_address}: {decrypted_data}")
+                self.log.debug(
+                    f"Decrypted packet from {client_address}: {decrypted_data}"
+                )
 
-                if command_byte == b'\x02':  # Client sends info
+                if command_byte == b"\x02":  # Client sends info
                     self.log.debug(f"Processing client info from {client_address}...")
-                    self.handle_client_info(server_socket, client_address, decrypted_data, key)
+                    self.handle_client_info(
+                        server_socket, client_address, decrypted_data, key
+                    )
                     # manager.print_contentserver_list()
-                elif command_byte == b'\x03':  # Heartbeat
+                elif command_byte == b"\x03":  # Heartbeat
                     manager.client_last_heartbeat[client_address] = time.time()
                     self.log.debug(f"Received heartbeat from {client_address}")
                     self.send_ok(server_socket, client_address)
-                elif command_byte == b'\x05':  # Custom application blob
+                elif command_byte == b"\x05":  # Custom application blob
                     self.log.debug(f"Received custom blob from {client_address}")
-                    self.handle_custom_blob(server_socket, client_address, decrypted_data)
-                elif command_byte == b'\x06':  # In-use ID list request
+                    self.handle_custom_blob(
+                        server_socket, client_address, decrypted_data
+                    )
+                elif command_byte == b"\x06":  # In-use ID list request
                     self.log.debug(f"{client_address} requested in-use id list")
                     self.send_used_ids(server_socket, client_address, key)
                 else:
@@ -451,15 +552,19 @@ class contentlistserver(TCPNetworkHandler):
                         s.send(msg)
                         s.close()
                     except Exception as e:
-                        self.log.warning(f"Failed to forward packet to peer {ip}:{prt}: {e}")
+                        self.log.warning(
+                            f"Failed to forward packet to peer {ip}:{prt}: {e}"
+                        )
             except Exception as e:
-                self.log.error(f"Exception in acceptcontentservers loop for {client_address}: {e}")
+                self.log.error(
+                    f"Exception in acceptcontentservers loop for {client_address}: {e}"
+                )
                 return
 
     def send_peer_list(self, sock):
         data = pickle.dumps(manager.contentserver_list)
-        enc = encryption.encrypt_bytes(data, self.config['peer_password'])
-        sock.send(struct.pack('!I', len(enc)))
+        enc = encryption.encrypt_bytes(data, self.config["peer_password"])
+        sock.send(struct.pack("!I", len(enc)))
         sock.send(enc)
 
     def request_peer_list(self, ip, port):
@@ -467,7 +572,7 @@ class contentlistserver(TCPNetworkHandler):
         s.connect((ip, port))
         s.send(b"\x00\x4f\x8c\x12")
         size_data = s.recv(4)
-        length = struct.unpack('!I', size_data)[0]
+        length = struct.unpack("!I", size_data)[0]
         data = b""
         while len(data) < length:
             chunk = s.recv(length - len(data))
@@ -476,7 +581,7 @@ class contentlistserver(TCPNetworkHandler):
             data += chunk
         s.close()
         try:
-            dec = encryption.decrypt_bytes(data, self.config['peer_password'])
+            dec = encryption.decrypt_bytes(data, self.config["peer_password"])
             return pickle.loads(dec)
         except Exception:
             return []
@@ -485,9 +590,15 @@ class contentlistserver(TCPNetworkHandler):
         apps = []
         subs = []
         if globalvars.CDR_DICTIONARY:
-            apps = [int.from_bytes(k, 'little') for k in globalvars.CDR_DICTIONARY.get(b"\x01\x00\x00\x00", {}).keys()]
-            subs = [int.from_bytes(k, 'little') for k in globalvars.CDR_DICTIONARY.get(b"\x02\x00\x00\x00", {}).keys()]
-        payload = pickle.dumps({'apps': apps, 'subs': subs})
+            apps = [
+                int.from_bytes(k, "little")
+                for k in globalvars.CDR_DICTIONARY.get(b"\x01\x00\x00\x00", {}).keys()
+            ]
+            subs = [
+                int.from_bytes(k, "little")
+                for k in globalvars.CDR_DICTIONARY.get(b"\x02\x00\x00\x00", {}).keys()
+            ]
+        payload = pickle.dumps({"apps": apps, "subs": subs})
         enc = peer_encrypt_message(key, payload)
-        sock.sendto(struct.pack('!I', len(enc)), addr)
+        sock.sendto(struct.pack("!I", len(enc)), addr)
         sock.sendto(enc, addr)
