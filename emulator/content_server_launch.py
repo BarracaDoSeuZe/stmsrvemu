@@ -59,7 +59,6 @@ log.info("   ---Starting Steam Content Server---   ")
 csserver = contentserver(int(config["content_server_port"]), config)
 csserver.daemon = False
 csserver.start()
-csserver.join()
 log.info(f"Steam2 Content Server listening on port {config['content_server_port']}")
 #utils.launch_neuter_application(False) # DEPRECATED
 log.info("...Steam Content Server ready...")
