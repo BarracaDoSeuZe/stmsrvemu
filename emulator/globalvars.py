@@ -246,9 +246,30 @@ def get_octal_ip_bytes(islan: bool, iscommunity: bool = False) -> bytes:
     return get_octal_ip(islan, iscommunity).encode('latin-1')
 
 
+def _get_main_server_override() -> Optional[dict]:
+    """Returns the main server's network info dict if this process is running as a
+    standalone Content Server (not aio_server) and has completed a handshake with
+    the main server, else None."""
+    if not aio_server and main_server_network_info:
+        return main_server_network_info
+    return None
+
+
+def _get_conn_port_bytes(local_config_key: str, override_key: str) -> bytes:
+    """Get a port value as bytes, preferring the main server's override (when running
+    as a standalone Content Server) over the local config value."""
+    override = _get_main_server_override()
+    if override and override.get(override_key):
+        return str(override[override_key]).encode('latin-1')
+    return config[local_config_key].encode('latin-1')
+
+
 @lru_cache(maxsize=4)
 def get_conn_ip_bytes(islan: bool) -> bytes:
     """Get connection IP as bytes based on LAN/WAN setting."""
+    override = _get_main_server_override()
+    if override:
+        return override["ip"].encode('latin-1')
     return config["server_ip"].encode('latin-1') if islan else config["public_ip"].encode('latin-1')
 
 
@@ -295,12 +316,19 @@ def replace_string_cdr(islan: bool) -> tuple:
 def replace_string_name_space(islan: bool, is2003_gcf: bool = False) -> tuple:
     """Generate URL replacement tuples for space-separated URLs."""
     ip = get_octal_ip_bytes(islan)
-    conn_ip = get_conn_ip_bytes(islan)
-    conn_ip = config["server_ip"].encode('latin-1') if islan else (
-        config["tracker_ip"].encode('latin-1') if config["tracker_ip"] != "" else config["public_ip"].encode('latin-1'))
-    trk_port = config['tracker_server_port'].encode('latin-1')
-    hl1master_port = config['masterhl1_server_port'].encode('latin-1')
-    vac1_port = config['vac_server_port'].encode('latin-1')
+    override = _get_main_server_override()
+    if override:
+        # Standalone Content Server with handshake data: always point these
+        # main-server-only fields at the main server, regardless of tracker_ip.
+        conn_ip = get_conn_ip_bytes(islan)
+    elif islan:
+        conn_ip = config["server_ip"].encode('latin-1')
+    else:
+        conn_ip = (config["tracker_ip"].encode('latin-1') if config["tracker_ip"] != ""
+                   else config["public_ip"].encode('latin-1'))
+    trk_port = _get_conn_port_bytes('tracker_server_port', 'tracker_port')
+    hl1master_port = _get_conn_port_bytes('masterhl1_server_port', 'masterhl1_port')
+    vac1_port = _get_conn_port_bytes('vac_server_port', 'vac_port')
 
     result = [
         (b'<h1><img src="http://steampowered.com/img/steam_logo_onwhite.gif" height="36" width="67" alt="STEAM" align="absmiddle"> Steam Account Information</h1>',
@@ -370,7 +398,7 @@ def replace_string_name(islan: bool, is2003_gcf: bool = False) -> tuple:
     community_ip = get_octal_ip_bytes(islan, True)
     store_url_new = config["store_url_new"].encode('latin-1')
     support_url_net = config["support_url_new"].encode('latin-1')
-    hl1master_port = config['masterhl1_server_port'].encode('latin-1')
+    hl1master_port = _get_conn_port_bytes('masterhl1_server_port', 'masterhl1_port')
 
     result = [
         (b"http://www.steampowered.com/platform/banner/random.php", b"http://" + ip + b"/platform/banner/random.php", b"Banner URL"),
@@ -418,16 +446,16 @@ def replace_string(islan: bool) -> tuple:
     """Generate binary/RSA key replacement tuples for neutering Steam binaries."""
     conn_ip = get_conn_ip_bytes(islan)
     manifest_name = b"lan32" if islan else b"wan32"
-    trk_port = config['tracker_server_port'].encode('latin-1')
+    trk_port = _get_conn_port_bytes('tracker_server_port', 'tracker_port')
     main_key_n = hex(encryption.main_key.n)[2:].encode('latin-1')
     net_key_n = hex(encryption.network_key.n)[2:].encode('latin-1')
-    dir_server_port = config["dir_server_port"].encode('latin-1')
-    cm_server_port = config["cm_encrypted_server_port"].encode('latin-1')
+    dir_server_port = _get_conn_port_bytes('dir_server_port', 'dir_port')
+    cm_server_port = _get_conn_port_bytes('cm_encrypted_server_port', 'cm_encrypted_port')
     community_ip = get_octal_ip_bytes(islan, True)
-    cser_port = config["cser_server_port"].encode('latin-1')
-    hl1master_port = config['masterhl1_server_port'].encode('latin-1')
-    hl2master_port = config['masterhl2_server_port'].encode('latin-1')
-    cser_port = config["cser_server_port"].encode('latin-1')
+    cser_port = _get_conn_port_bytes('cser_server_port', 'cser_port')
+    hl1master_port = _get_conn_port_bytes('masterhl1_server_port', 'masterhl1_port')
+    hl2master_port = _get_conn_port_bytes('masterhl2_server_port', 'masterhl2_port')
+    vac_port = _get_conn_port_bytes('vac_server_port', 'vac_port')
 
     return (
         # RSA Keys
@@ -508,7 +536,7 @@ def replace_string(islan: bool) -> tuple:
         (b"cm0.steampowered.com", conn_ip, b"DNS connection manager fallback"),
         (b'"tracker.valvesoftware.com:1200"', b'"' + conn_ip + b':' + trk_port + b'"', b"Tracker DNS 1"),
         (b'tracker.valvesoftware.com:1200', conn_ip + b':' + trk_port, b"Tracker DNS 2"),
-        (b'gridmaster.valvesoftware.com:27012', conn_ip + b":" + config['vac_server_port'].encode('latin-1'), b"HL1 Valve AntiCheat Default Server"),
+        (b'gridmaster.valvesoftware.com:27012', conn_ip + b":" + vac_port, b"HL1 Valve AntiCheat Default Server"),
         (b'AUTHENTICATIONSERVERALTADRS', b'AUTHENTICATIONSERVERADRS\x00\x00\x00', b"Steam Beta 1 Auth Alt IP Fix"),
         (b'\x00\x00http://cdn.steamcommunity.com/\x00\x00', b'\x00\x00http://' + conn_ip + b'/cdn/\x00\x00', b'Steam community CDN'),
         (b'\x00\x00http://cdn.steampowered.com/v/gfx/\x00\x00', b'\x00\x00http://' + conn_ip + b'/cdn/v/gfx/\x00\x00', b'Steampowered CDN 1'),

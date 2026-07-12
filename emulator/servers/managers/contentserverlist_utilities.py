@@ -403,6 +403,7 @@ def handshake(client_socket, server_address, shared_secret, CLIENT_IDENTIFIER):
 
         if main_server_info:
             globalvars.main_server_network_info = main_server_info
+            globalvars.clear_replacement_cache()
             log.debug(f"Received main server network info: {main_server_info}")
         else:
             log.warning(

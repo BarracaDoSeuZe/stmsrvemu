@@ -431,7 +431,6 @@ class contentlistserver(TCPNetworkHandler):
         second_blob_length = len(second_blob_data).to_bytes(4, "big")
 
         # Barraca note: Increasing the size of the main server info to include all necessary ports for the Standalone Content Server.
-        # TODO: Make Standalone Content Server use the ports from the new handshake info.
         main_ip = globalvars.server_ip if islan else globalvars.public_ip
         main_server_info = {
             "ip": main_ip,
