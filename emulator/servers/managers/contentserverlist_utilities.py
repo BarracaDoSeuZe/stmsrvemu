@@ -363,6 +363,20 @@ def handshake(client_socket, server_address, shared_secret, CLIENT_IDENTIFIER):
     second_blob = decrypted_data[offset : offset + secondblob_length]
     offset += secondblob_length
 
+    # Read main server network info (optional -- older main servers won't send this,
+    # so absence is not an error, just means the override won't be available).
+    main_server_info = None
+    if len(decrypted_data) >= offset + 4:
+        main_info_length = int.from_bytes(decrypted_data[offset : offset + 4], "big")
+        offset += 4
+        if len(decrypted_data) >= offset + main_info_length:
+            main_info_data = decrypted_data[offset : offset + main_info_length]
+            offset += main_info_length
+            try:
+                main_server_info = pickle.loads(main_info_data)
+            except Exception as e:
+                log.warning(f"Failed to parse main server network info: {e}")
+
     # Save to file - use path relative to project root (not '../..' which is fragile)
     cache_dir = os.path.join("files", "cache")
     wan_blob = os.path.join(cache_dir, "secondblob_wan.bin")
@@ -386,6 +400,15 @@ def handshake(client_socket, server_address, shared_secret, CLIENT_IDENTIFIER):
         encryption.BERstring = encryption.network_key.public_key().export_key("DER")
         encryption.signed_mainkey_reply = encryption.get_mainkey_reply()
         log.debug("Received RSA keys saved to files.")
+
+        if main_server_info:
+            globalvars.main_server_network_info = main_server_info
+            log.debug(f"Received main server network info: {main_server_info}")
+        else:
+            log.warning(
+                "No main server network info received in handshake (main server may need updating). "
+                "Falling back to local config."
+            )
 
         return key
     else:

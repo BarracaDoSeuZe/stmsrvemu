@@ -87,6 +87,7 @@ use_webserver: bool = config["use_webserver"].lower() == "true"
 cs_region: str = "US"
 cellid: int = 1
 aio_server: bool = False
+main_server_network_info: Optional[dict] = None  # Populated via handshake when running as a standalone Content Server (see contentserverlist_utilities.handshake)
 peer_password: str = ""
 dir_ismaster: str = "false"
 

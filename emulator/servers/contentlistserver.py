@@ -430,6 +430,25 @@ class contentlistserver(TCPNetworkHandler):
 
         second_blob_length = len(second_blob_data).to_bytes(4, "big")
 
+        # Barraca note: Increasing the size of the main server info to include all necessary ports for the Standalone Content Server.
+        # TODO: Make Standalone Content Server use the ports from the new handshake info.
+        main_ip = globalvars.server_ip if islan else globalvars.public_ip
+        main_server_info = {
+            "ip": main_ip,
+            "tracker_port": self.config["tracker_server_port"],
+            "cm_encrypted_port": self.config["cm_encrypted_server_port"],
+            "cm_unencrypted_port": self.config["cm_unencrypted_server_port"],
+            "vac_port": self.config["vac_server_port"],
+            "masterhl1_port": self.config["masterhl1_server_port"],
+            "masterhl2_port": self.config["masterhl2_server_port"],
+            "validation_port": self.config["validation_port"],
+            "auth_port": self.config["auth_server_port"],
+            "dir_port": self.config["dir_server_port"],
+            "cser_port": self.config["cser_server_port"],
+        }
+        main_server_info_data = pickle.dumps(main_server_info)
+        main_server_info_length = len(main_server_info_data).to_bytes(4, "big")
+
         # Prepare and encrypt the payload
         handshake_payload = (
             message_length
@@ -440,6 +459,8 @@ class contentlistserver(TCPNetworkHandler):
             + key_512_data
             + second_blob_length
             + second_blob_data
+            + main_server_info_length
+            + main_server_info_data
         )
 
         encrypted_payload = peer_encrypt_message(key, handshake_payload)
