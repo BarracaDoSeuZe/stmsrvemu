@@ -378,15 +378,22 @@ def handshake(client_socket, server_address, shared_secret, CLIENT_IDENTIFIER):
                 log.warning(f"Failed to parse main server network info: {e}")
 
     # Save to file - use path relative to project root (not '../..' which is fragile)
+    #
+    # NOTE: The main server only ever sends ONE blob variant per handshake (whichever
+    # matched islan from the main server's point of view -- almost always WAN, since
+    # the standalone Content Server is a separate machine). We save it as BOTH
+    # secondblob_lan.bin and secondblob_wan.bin because load_blobs_to_memory() only
+    # builds globalvars.CDR_DICTIONARY from the LAN variant. Since get_conn_ip_bytes()
+    # already ignores LAN/WAN when running standalone (always returns the main
+    # server's IP via main_server_network_info), using the same blob for both is safe.
     cache_dir = os.path.join("files", "cache")
     wan_blob = os.path.join(cache_dir, "secondblob_wan.bin")
+    lan_blob = os.path.join(cache_dir, "secondblob_lan.bin")
     with open(wan_blob, "wb") as f:
         f.write(second_blob)
-        try:
-            shutil.rmtree(os.path.join(cache_dir, "secondblob_lan.bin"))
-        except Exception:
-            pass
-    log.debug("Saved second blob data to files/cache/secondblob_wan.bin")
+    with open(lan_blob, "wb") as f:
+        f.write(second_blob)
+    log.debug("Saved second blob data to files/cache/secondblob_wan.bin and secondblob_lan.bin")
 
     if message == b"handshake successful":
         log.debug("Handshake successful with server.")

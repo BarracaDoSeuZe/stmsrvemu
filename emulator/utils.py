@@ -562,20 +562,35 @@ def check_secondblob_changed():
     # replace_installer_exes_thread()  # Function to call the installer steam.exe replacer for the website download
 
 def launch_neuter_application_standalone():
-    if os.path.isfile(globalvars.neuter_path):# and globalvars.record_ver > 1:
-        with open(os.path.join('files', 'configs', '.isneutering'), 'w') as fp:
-            pass
-        if globalvars.IS_WINDOWS:
-            if config["from_source"].lower() == "true":
-                cmd = ["python", globalvars.neuter_path, "load", "app", ",8"]
-            else:
-                cmd = [globalvars.neuter_path, "load", "app", ",8"]
-        else:
-            cmd = ["python3", globalvars.neuter_path, "load", "app", ",8"]
-        neuter1 = subprocess.Popen(cmd)
-        neuter1.wait()
-    else:
-        rename_temp_blobs()
+    """
+    Neuter known apps for a standalone Content Server.
+
+    Uses the CDR blob delivered via the handshake with the main server (see
+    contentserverlist_utilities.handshake, which saves files/cache/secondblob_lan.bin
+    and secondblob_wan.bin) instead of building the blob from a database -- standalone
+    Content Servers don't have database access by design. Reuses the same in-process
+    neuter_worker/auto_neuter pipeline the main emulator uses (see
+    check_secondblob_changed), so this is idempotent: apps that already have a
+    files/cache/{app}_{version}/ folder are skipped automatically.
+    """
+    try:
+        load_blobs_to_memory()
+    except Exception as e:
+        log.error(f"Failed to load CDR blob into memory for standalone neutering: {e}")
+        return
+
+    if globalvars.CDR_DICTIONARY is None:
+        log.warning(
+            "No CDR blob available yet -- skipping standalone neutering. "
+            "This app/version's content may be served un-neutered until the next "
+            "successful handshake with the main server."
+        )
+        return
+
+    neutering_done.clear()
+    neuter_thread = Thread(target=neuter_worker, args=("load", "app", ",8"), daemon=True)
+    neuter_thread.start()
+    log.info("Standalone Content Server: neutering thread started for known apps.")
 
 
 def handle_neutering_completion():
