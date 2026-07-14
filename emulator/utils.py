@@ -1691,7 +1691,8 @@ def standalone_parent_initializer(server_type: int = 0):
         globalvars.force_email_verification = config['force_email_verification'].lower()
 
     initialize(server_type)
-    sync_settings_to_db()
+    if server_type != 4:  # Content Server standalone has no database access by design
+        sync_settings_to_db()
 
     # IP Address variables must be set after initializer() incase user wants to use auto_ip and leave the server_ip or public_ip blank
     globalvars.server_ip = config["server_ip"]

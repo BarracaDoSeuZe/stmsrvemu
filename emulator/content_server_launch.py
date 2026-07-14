@@ -49,7 +49,7 @@ globalvars.current_os = platform.system()
 globalvars.aio_server = False
 
 # Initialize parent and print server info
-new_password = utils.standalone_parent_initializer()
+new_password = utils.standalone_parent_initializer(4)
 print(f"\nSteam Content Server Emulator v{globalvars.local_ver}")
 print("=" * (33 + len(globalvars.local_ver)))
 print("\n -== Half-Life 2 20th Anniversary Celebration 2004-2024 ==-\n")
